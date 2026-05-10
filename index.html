@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tugas WebGIS - WMS & WFS</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v10.0.0/ol.css" />
+    <script src="https://cdn.jsdelivr.net/npm/ol@v10.0.0/dist/ol.js"></script>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        width: 100vw;
+        height: 80vh;
+      }
+      .controls {
+        padding: 10px;
+        background: #f8f9fa;
+      }
+      .ol-popup {
+        position: absolute;
+        background-color: white;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #cccccc;
+        bottom: 12px;
+        left: -50px;
+        min-width: 200px;
+      }
+      .ol-popup-closer {
+        text-decoration: none;
+        position: absolute;
+        top: 2px;
+        right: 8px;
+        color: #333;
+        font-weight: bold;
+      }
+      .ol-popup-closer:after {
+        content: "✖";
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <strong>Toggle Layers:</strong>
+      <label><input type="checkbox" id="toggleWms" checked /> WMS (OSM Basemap)</label>
+      <label><input type="checkbox" id="toggleWfs" checked /> WFS (Water Areas)</label>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="popup" class="ol-popup">
+      <a href="#" id="popup-closer" class="ol-popup-closer"></a>
+      <div id="popup-content"></div>
+    </div>
+
+    <script>
+      // 1. Setup Layer Basemap (Ganti ke OSM Standar agar lebih stabil)
+      const wmsLayer = new ol.layer.Tile({
+        source: new ol.source.OSM(),
+      });
+
+      // 2. Setup Layer WFS (ahocevar water areas)
+      const wfsSource = new ol.source.Vector({
+        format: new ol.format.GeoJSON(),
+        url: function (extent) {
+          return "https://ahocevar.com/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typename=osm:water_areas&outputFormat=application/json&srsname=EPSG:3857&bbox=" + extent.join(",") + ",EPSG:3857";
+        },
+        strategy: ol.loadingstrategy.bbox, // Hanya meload data di area yang terlihat
+      });
+
+      const wfsLayer = new ol.layer.Vector({
+        source: wfsSource,
+        style: new ol.style.Style({
+          fill: new ol.style.Fill({ color: "rgba(0, 150, 255, 0.5)" }),
+          stroke: new ol.style.Stroke({ color: "blue", width: 1 }),
+        }),
+      });
+
+      // Tambahkan pendeteksi error untuk WFS
+      wfsSource.on("featuresloaderror", function () {
+        alert("Gagal mengambil data WFS. Pastikan koneksi internet stabil atau server demo sedang tidak down.");
+      });
+
+      wfsSource.on("addfeature", function () {
+        console.log("Data WFS berhasil dimuat!");
+      });
+
+      // 3. Inisialisasi Peta
+      const map = new ol.Map({
+        target: "map",
+        layers: [wmsLayer, wfsLayer],
+        view: new ol.View({
+          center: ol.proj.fromLonLat([13.3, 47.4]), // Pindah ke lokasi data WFS (Austria)
+          zoom: 13,
+        }),
+      });
+
+      // 4. Logika Toggle Visibility
+      document.getElementById("toggleWms").addEventListener("change", function (e) {
+        wmsLayer.setVisible(e.target.checked);
+      });
+      document.getElementById("toggleWfs").addEventListener("change", function (e) {
+        wfsLayer.setVisible(e.target.checked);
+      });
+
+      // 5. Setup Popup
+      const container = document.getElementById("popup");
+      const content = document.getElementById("popup-content");
+      const closer = document.getElementById("popup-closer");
+
+      const overlay = new ol.Overlay({
+        element: container,
+        autoPan: {
+          animation: {
+            duration: 250,
+          },
+        },
+      });
+      closer.onclick = function () {
+        overlay.setPosition(undefined);
+        closer.blur();
+        return false;
+      };
+      map.addOverlay(overlay);
+
+      // 6. Logika Klik WFS untuk Popup Atribut
+      map.on("singleclick", function (evt) {
+        let featureFound = false;
+        map.forEachFeatureAtPixel(evt.pixel, function (feature, layer) {
+          if (layer === wfsLayer) {
+            featureFound = true;
+            // Ambil atribut 'name' dan 'waterway' dari GeoJSON
+            const name = feature.get("name") || "Tidak ada nama";
+            const type = feature.get("waterway") || "Perairan";
+
+            content.innerHTML = `<strong>Nama:</strong> ${name}<br><strong>Tipe:</strong> ${type}`;
+            overlay.setPosition(evt.coordinate);
+          }
+        });
+
+        // Tutup popup jika klik di luar fitur
+        if (!featureFound) {
+          overlay.setPosition(undefined);
+        }
+      });
+
+      // 7. Ubah cursor saat hover di atas feature agar user tahu bisa diklik
+      map.on("pointermove", function (e) {
+        const pixel = map.getEventPixel(e.originalEvent);
+        const hit = map.hasFeatureAtPixel(pixel);
+        map.getTargetElement().style.cursor = hit ? "pointer" : "";
+      });
+    </script>
+  </body>
+</html>
